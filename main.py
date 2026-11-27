@@ -20,7 +20,8 @@ ADMIN_POLL_INTERVAL = 15
 
 # === GLOBALS ===
 welcome_sent = {}
-processed_message_ids = set()
+# SET use kar rahe hain taaki ID check fast aur pakka ho
+processed_message_ids = set() 
 gc_link_pattern = re.compile(
     r'(https?://)?(www\.)?(instagram\.com|instagr\.am|ig\.me)/(chat|direct|group|j)',
     re.IGNORECASE
@@ -86,7 +87,7 @@ def handle_welcome(thread_id, user_id, username):
         return
         
     mention = f"@{username}" if username else f"@{user_id}"
-    text = f"🌸 WELCOME BACK TO OUR {mention} 🌸Aao aao, hum toh tumhara hi wait kar rahe the! Batao kya haal chaal?BABU 💖🫶"
+    text = f"🌸 WELCOME BACK TO OUR {mention} 🌸 Aao aao, hum toh tumhara hi wait kar rahe the! Batao kya haal chaal? BABU 💖🫶"
     
     welcome_sent[username] = now 
     
@@ -123,12 +124,12 @@ def handle_1111(thread_id):
     chosen_heart = random.choice(hearts)
     text = f"11:11 {chosen_heart}"
     if send_msg(thread_id, text):
-        print("[11:11] Message sent")
+        print("[11:11] Message Sent")
 
 # === MESSAGE POLLER ===
 def poll_messages(start_time):
     global processed_message_ids
-    print("[BOT] Message tracker started. Ignoring older messages.")
+    print("[BOT] Message tracker started. Strict Mode ON.")
 
     while True:
         for thread_id in GROUP_THREAD_IDS:
@@ -145,9 +146,11 @@ def poll_messages(start_time):
             messages = list(reversed(thread.messages))
 
             for msg in messages:
+                # STRICT ID CHECK: Agar ID pehle se hai, toh skip
                 if msg.id in processed_message_ids:
                     continue
                 
+                # Process karne se PEHLE ID lock karo
                 processed_message_ids.add(msg.id)
 
                 if msg.timestamp and msg.timestamp.timestamp() < start_time:
@@ -177,13 +180,14 @@ def poll_messages(start_time):
                         else:
                             handle_welcome(thread_id, sender_id, username)
                     else:
-                        # Agar text nahi hai (Sticker/Photo/Reel) toh welcome karega
+                        # Sticker/Media pe welcome
                         handle_welcome(thread_id, sender_id, username)
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
                 
-        if len(processed_message_ids) > 5000:
-            processed_message_ids = set(list(processed_message_ids)[-2000:])
+        # Memory clean (Only keep last 3000 IDs)
+        if len(processed_message_ids) > 3000:
+            processed_message_ids = set(list(processed_message_ids)[-1500:])
             
         time.sleep(MESSAGE_CHECK_INTERVAL)
 
@@ -201,6 +205,7 @@ def poll_admin_dm():
             if not thread.messages: continue
             last = thread.messages[0]
             
+            # Strict DM ID Check
             if last.id in processed_message_ids:
                 continue
             processed_message_ids.add(last.id)
@@ -267,6 +272,7 @@ if __name__ == "__main__":
     login()
     start_keep_alive()
     
+    # Start time set (Taaki purane messages process na ho)
     BOT_START_TIME = time.time()
     
     for tid in GROUP_THREAD_IDS:
