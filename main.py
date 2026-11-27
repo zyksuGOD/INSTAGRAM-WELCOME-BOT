@@ -10,7 +10,8 @@ from instagrapi.exceptions import LoginRequired, RateLimitError
 # === CONFIG ===
 BOT_USERNAME = os.environ.get("IG_BOT_USERNAME", "gc_bot_acc")
 ADMIN_USERNAMES = [a.strip() for a in os.environ.get("IG_ADMINS", "eren_ye4gerrr,unrexadox").split(",") if a.strip()]
-GROUP_THREAD_IDS = [t.strip() for t in os.environ.get("IG_THREAD_IDS", "").split(",") if t.strip()]
+# Default me naya GC ID daal diya hai
+GROUP_THREAD_IDS = [t.strip() for t in os.environ.get("IG_THREAD_IDS", "2961421587561271").split(",") if t.strip()]
 
 WELCOME_COOLDOWN_SEC = 6 * 3600
 MESSAGE_CHECK_INTERVAL = 10 
@@ -52,7 +53,7 @@ def get_sessionid():
 def login():
     sid = get_sessionid()
     if not sid:
-        raise RuntimeError("No sessionid found")
+        raise RuntimeError("No sessionid found in env or cookies.txt")
     cl.login_by_sessionid(sid)
     print(f"[BOT] Logged in as {cl.username}")
 
@@ -62,6 +63,7 @@ def get_user_info(user_id):
     except Exception: return None
 
 def human_delay():
+    # 6 se 12 sec delay taaki safe rahe
     time.sleep(random.randint(6, 12))
 
 def send_msg(thread_id, text, reply_to=None):
@@ -95,11 +97,8 @@ def handle_ignore(thread_id, user_id, msg_obj):
     human_delay()
     u = get_user_info(user_id)
     username = u.username if u else "baccha"
-    
-    # Random emoji variations taaki spam na lage
     emojis = ["🥹💋", "🥹💖", "🫂💋", "🥺💕", "💖🥹"]
     chosen_emoji = random.choice(emojis)
-    
     text = f"@{username} AWW BACCHA ISSOKIEE MEIN HU NA APKE LIYE {chosen_emoji}"
     if send_msg(thread_id, text, reply_to=msg_obj): 
         print(f"[IGNORE] replied to {username}")
@@ -108,11 +107,8 @@ def handle_gc_link(thread_id, user_id, msg_obj):
     human_delay()
     u = get_user_info(user_id)
     username = u.username if u else "user"
-    
-    # Random emoji variations
     emojis = ["😍💦👅", "😍😋💦", "🤤💦👅", "😍💦🔥", "🥵💦👅"]
     chosen_emoji = random.choice(emojis)
-    
     text = f"@{username} AWW TERE B44P KI BIWI KI PICS SHARE KAR RHA HAI KYA GC PE {chosen_emoji}"
     if send_msg(thread_id, text, reply_to=msg_obj): 
         print(f"[GCLINK] replied to {username}")
@@ -130,7 +126,10 @@ def poll_messages():
                 try: login()
                 except Exception: pass
                 continue
-            except Exception:
+            except Exception as e:
+                # Agar galat id ho toh print karega
+                print(f"[THREAD ERROR] {thread_id}: {e}")
+                time.sleep(5)
                 continue
 
             if not thread or not thread.messages: continue
@@ -139,11 +138,9 @@ def poll_messages():
             for msg in messages:
                 if msg.id in processed_message_ids:
                     continue
-                
                 if is_first_run:
                     processed_message_ids.add(msg.id)
                     continue
-                
                 if msg.user_id == cl.user_id:
                     processed_message_ids.add(msg.id)
                     continue
@@ -153,39 +150,29 @@ def poll_messages():
                     raw_text = getattr(msg, "text", "") or ""
                     sender_id = msg.user_id
 
-                    # 1. IGNORE CHECK
                     if raw_text and "ignore" in raw_text.lower():
                         handle_ignore(thread_id, sender_id, msg)
                         processed_message_ids.add(msg.id)
-                    
-                    # 2. GC LINK CHECK
                     elif raw_text and gc_link_pattern.search(raw_text):
                         handle_gc_link(thread_id, sender_id, msg)
                         processed_message_ids.add(msg.id)
-                    
-                    # 3. WELCOME CHECK (NEW MEMBER JOINED)
                     elif item_type == "action_log" and "joined" in raw_text.lower():
                         joined_uid = None
                         joined_uname = None
-                        
                         m = re.search(r"@([A-Za-z0-9._]+)", raw_text)
                         if m:
                             joined_uname = m.group(1)
                             try: joined_uid = cl.user_id_from_username(joined_uname)
                             except: pass
-                        
                         if not joined_uid:
                             mid_uid = getattr(msg, "user_id", None)
                             if mid_uid and mid_uid != cl.user_id:
                                 joined_uid = mid_uid
                                 u = get_user_info(mid_uid)
                                 joined_uname = u.username if u else None
-                        
                         if joined_uid:
                             handle_welcome(thread_id, joined_uid, joined_uname)
-                        
                         processed_message_ids.add(msg.id)
-                        
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
                     processed_message_ids.add(msg.id)
@@ -209,12 +196,8 @@ def poll_admin_dm():
         for thread in threads:
             if not thread.messages: continue
             last = thread.messages[0]
-            
-            if last.id in processed_message_ids:
-                continue
-                
+            if last.id in processed_message_ids: continue
             processed_message_ids.add(last.id)
-            
             if last.user_id == cl.user_id: continue
 
             sender = get_user_info(last.user_id)
