@@ -163,21 +163,21 @@ def poll_messages(start_time):
                 raw_text = getattr(msg, "text", "") or ""
                 sender_id = msg.user_id
                 
-                if not raw_text:
-                    continue
-                
                 try:
                     sender_info = get_user_info(sender_id)
                     username = sender_info.username if sender_info else None
                     
-                    if "hello bot" in raw_text.lower():
-                        handle_hello_bot(thread_id, sender_id)
-                    elif "ignore" in raw_text.lower():
-                        handle_ignore(thread_id, sender_id)
-                    elif gc_link_pattern.search(raw_text):
-                        handle_gc_link(thread_id, sender_id)
+                    if raw_text:
+                        if "hello bot" in raw_text.lower():
+                            handle_hello_bot(thread_id, sender_id)
+                        elif "ignore" in raw_text.lower():
+                            handle_ignore(thread_id, sender_id)
+                        elif gc_link_pattern.search(raw_text):
+                            handle_gc_link(thread_id, sender_id)
+                        else:
+                            handle_welcome(thread_id, sender_id, username)
                     else:
-                        # Ab sabko welcome milega (Admin check hata diya)
+                        # Agar text nahi hai (Sticker/Photo/Reel) toh welcome karega
                         handle_welcome(thread_id, sender_id, username)
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
