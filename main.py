@@ -78,7 +78,7 @@ def handle_welcome(thread_id, user_id, username):
     now = time.time()
     if user_id == cl.user_id: # Khud ko welcome nahi
         return
-    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC: # 12 ghante
+    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC: # 12 ghante gap
         return
         
     mention = f"@{username}" if username else f"@{user_id}"
@@ -144,7 +144,7 @@ def poll_messages():
                 
                 processed_message_ids.add(msg.id)
 
-                if msg.user_id == cl.user_id: # Khud ka message
+                if msg.user_id == cl.user_id: # Khud ka message skip
                     continue
                 
                 item_type = getattr(msg, "item_type", "") or ""
@@ -258,6 +258,10 @@ def start_keep_alive():
 if __name__ == "__main__":
     login()
     start_keep_alive()
+    # Bot Active Message GC me bhejna
+    for tid in GROUP_THREAD_IDS:
+        send_msg(tid, "BOT IS ACTIVE NOW")
+    
     threading.Thread(target=poll_messages, daemon=True).start()
     threading.Thread(target=poll_admin_dm, daemon=True).start()
     threading.Thread(target=daily_scheduler, daemon=True).start()
