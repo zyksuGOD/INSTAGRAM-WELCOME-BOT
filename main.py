@@ -14,14 +14,14 @@ GROUP_THREAD_IDS = [t.strip() for t in os.environ.get("IG_THREAD_IDS", "").split
 
 IGNORE_WELCOME_USERNAMES = ["qwetuihf1", BOT_USERNAME] 
 
-WELCOME_COOLDOWN_SEC = 12 * 3600  # 12 ghante
+WELCOME_COOLDOWN_SEC = 12 * 3600  # 12 ghante ka strict lock
 MESSAGE_CHECK_INTERVAL = 5 
 ADMIN_POLL_INTERVAL = 15
 
 # === GLOBALS ===
-welcome_sent = {}
-# SET use kar rahe hain taaki ID check fast aur pakka ho
-processed_message_ids = set() 
+welcome_sent = {} # Isme user_id save hoga
+processed_message_ids = set()
+last_admin_cmd = {"text": "", "time": 0} # Admin ka double message rokne ke liye
 gc_link_pattern = re.compile(
     r'(https?://)?(www\.)?(instagram\.com|instagr\.am|ig\.me)/(chat|direct|group|j)',
     re.IGNORECASE
@@ -81,15 +81,16 @@ def handle_welcome(thread_id, user_id, username):
     now = time.time()
     
     if user_id == cl.user_id: return
-    if username in IGNORE_WELCOME_USERNAMES: return
+    if username and username in IGNORE_WELCOME_USERNAMES: return
     
-    if now - welcome_sent.get(username, 0) < WELCOME_COOLDOWN_SEC:
+    # Time check hamesha user_id se hoga
+    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC:
         return
         
     mention = f"@{username}" if username else f"@{user_id}"
     text = f"🌸 WELCOME BACK TO OUR {mention} 🌸 Aao aao, hum toh tumhara hi wait kar rahe the! Batao kya haal chaal? BABU 💖🫶"
     
-    welcome_sent[username] = now 
+    welcome_sent[user_id] = now 
     
     if send_msg(thread_id, text):
         print(f"[WELCOME] {username}")
@@ -146,11 +147,9 @@ def poll_messages(start_time):
             messages = list(reversed(thread.messages))
 
             for msg in messages:
-                # STRICT ID CHECK: Agar ID pehle se hai, toh skip
                 if msg.id in processed_message_ids:
                     continue
                 
-                # Process karne se PEHLE ID lock karo
                 processed_message_ids.add(msg.id)
 
                 if msg.timestamp and msg.timestamp.timestamp() < start_time:
@@ -180,12 +179,10 @@ def poll_messages(start_time):
                         else:
                             handle_welcome(thread_id, sender_id, username)
                     else:
-                        # Sticker/Media pe welcome
                         handle_welcome(thread_id, sender_id, username)
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
                 
-        # Memory clean (Only keep last 3000 IDs)
         if len(processed_message_ids) > 3000:
             processed_message_ids = set(list(processed_message_ids)[-1500:])
             
@@ -193,7 +190,7 @@ def poll_messages(start_time):
 
 # === ADMIN & DAILY ===
 def poll_admin_dm():
-    global processed_message_ids
+    global processed_message_ids, last_admin_cmd
     while True:
         try: 
             threads = cl.direct_threads(amount=5)
@@ -205,7 +202,6 @@ def poll_admin_dm():
             if not thread.messages: continue
             last = thread.messages[0]
             
-            # Strict DM ID Check
             if last.id in processed_message_ids:
                 continue
             processed_message_ids.add(last.id)
@@ -218,7 +214,15 @@ def poll_admin_dm():
             raw_text = (last.text or "").strip()
             if raw_text.startswith("/send_gc "):
                 content = raw_text[len("/send_gc "):].strip()
+                
+                # Admin ka triple message rokne ke liye 60 sec lock
+                if content == last_admin_cmd["text"] and time.time() - last_admin_cmd["time"] < 60:
+                    continue
+                
                 if content:
+                    last_admin_cmd["text"] = content
+                    last_admin_cmd["time"] = time.time()
+                    
                     for tid in GROUP_THREAD_IDS:
                         send_msg(tid, content)
                     send_msg(thread.id, "✅ Sent to GC")
@@ -272,7 +276,6 @@ if __name__ == "__main__":
     login()
     start_keep_alive()
     
-    # Start time set (Taaki purane messages process na ho)
     BOT_START_TIME = time.time()
     
     for tid in GROUP_THREAD_IDS:
