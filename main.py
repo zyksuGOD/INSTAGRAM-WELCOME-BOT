@@ -120,9 +120,9 @@ def handle_1111(thread_id):
         print("[11:11] Message sent")
 
 # === MESSAGE POLLER ===
-def poll_messages():
+def poll_messages(start_time):
     global processed_message_ids
-    print("[BOT] Message tracker started...")
+    print("[BOT] Message tracker started. Ignoring older messages.")
 
     while True:
         for thread_id in GROUP_THREAD_IDS:
@@ -143,6 +143,10 @@ def poll_messages():
                     continue
                 
                 processed_message_ids.add(msg.id)
+
+                # Purana message skip karo (bot start hone se pehle ka)
+                if msg.timestamp and msg.timestamp.timestamp() < start_time:
+                    continue
 
                 if msg.user_id == cl.user_id: # Khud ka message skip
                     continue
@@ -169,7 +173,6 @@ def poll_messages():
                     elif gc_link_pattern.search(raw_text):
                         handle_gc_link(thread_id, sender_id)
                     elif not is_admin:
-                        # Admin ko welcome nahi milega, baaki sabko milega
                         handle_welcome(thread_id, sender_id, username)
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
@@ -258,11 +261,15 @@ def start_keep_alive():
 if __name__ == "__main__":
     login()
     start_keep_alive()
-    # Bot Active Message GC me bhejna
+    
+    # Start time save karo taaki purane messages ignore ho sakein
+    BOT_START_TIME = time.time()
+    
+    # 1 hi baar Active message bhejne ke liye check
     for tid in GROUP_THREAD_IDS:
         send_msg(tid, "BOT IS ACTIVE NOW")
     
-    threading.Thread(target=poll_messages, daemon=True).start()
+    threading.Thread(target=poll_messages, args=(BOT_START_TIME,), daemon=True).start()
     threading.Thread(target=poll_admin_dm, daemon=True).start()
     threading.Thread(target=daily_scheduler, daemon=True).start()
     print("[BOT] Running safely...")
