@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: ig-gc-bot
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: IG_BOT_USERNAME
+        value: iy7qt
+      - key: IG_ADMINS
+        value: eren_ye4gerrr,unrexadox
+      - key: IG_THREAD_IDS
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: IG_SESSIONID
+        sync: false
