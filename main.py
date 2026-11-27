@@ -61,7 +61,6 @@ def get_user_info(user_id):
     except Exception: return None
 
 def send_msg(thread_id, text):
-    # Safe delay: 8 se 12 second (ban nahi lagega)
     time.sleep(random.randint(8, 12)) 
     try:
         cl.direct_send(text, thread_ids=[thread_id])
@@ -79,7 +78,7 @@ def handle_welcome(thread_id, user_id, username):
     now = time.time()
     if user_id == cl.user_id: # Khud ko welcome nahi
         return
-    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC: # 12 ghante ka gap
+    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC: # 12 ghante
         return
         
     mention = f"@{username}" if username else f"@{user_id}"
@@ -105,6 +104,13 @@ def handle_gc_link(thread_id, user_id):
     text = f"@{username} AWW TERE B44P KI BIWI KI PICS SHARE KAR RHA HAI KYA GC PE {chosen_emoji}"
     if send_msg(thread_id, text): 
         print(f"[GCLINK] replied to {username}")
+
+def handle_hello_bot(thread_id, user_id):
+    u = get_user_info(user_id)
+    username = u.username if u else "user"
+    text = f"@{username} hey wssp"
+    if send_msg(thread_id, text):
+        print(f"[HELLO BOT] replied to {username}")
 
 def handle_1111(thread_id):
     hearts = ["💖", "❤️", "🧡", "💛", "💚", "💙", "💜", "🤎", "🖤", "🤍", "💗", "💓", "💞", "💕"]
@@ -138,7 +144,7 @@ def poll_messages():
                 
                 processed_message_ids.add(msg.id)
 
-                if msg.user_id == cl.user_id: # Khud ka message skip
+                if msg.user_id == cl.user_id: # Khud ka message
                     continue
                 
                 item_type = getattr(msg, "item_type", "") or ""
@@ -154,12 +160,16 @@ def poll_messages():
                 try:
                     sender_info = get_user_info(sender_id)
                     username = sender_info.username if sender_info else None
+                    is_admin = username in ADMIN_USERNAMES
                     
-                    if "ignore" in raw_text.lower():
+                    if "hello bot" in raw_text.lower():
+                        handle_hello_bot(thread_id, sender_id)
+                    elif "ignore" in raw_text.lower():
                         handle_ignore(thread_id, sender_id)
                     elif gc_link_pattern.search(raw_text):
                         handle_gc_link(thread_id, sender_id)
-                    else:
+                    elif not is_admin:
+                        # Admin ko welcome nahi milega, baaki sabko milega
                         handle_welcome(thread_id, sender_id, username)
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
