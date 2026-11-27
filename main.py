@@ -86,7 +86,7 @@ def handle_welcome(thread_id, user_id, username):
         return
         
     mention = f"@{username}" if username else f"@{user_id}"
-    text = f"🌸 WELCOME {mention} 🌸Aao aao, hum toh tumhara hi wait kar rahe the! Batao kya haal chaal? 💖🫶"
+    text = f"🌸 WELCOME BACK TO OUR {mention} 🌸Aao aao, hum toh tumhara hi wait kar rahe the! Batao kya haal chaal?BABU 💖🫶"
     
     welcome_sent[username] = now 
     
