@@ -12,6 +12,8 @@ BOT_USERNAME = os.environ.get("IG_BOT_USERNAME", "qwetuihf1")
 ADMIN_USERNAMES = [a.strip() for a in os.environ.get("IG_ADMINS", "eren_ye4gerrr,unrexadox").split(",") if a.strip()]
 GROUP_THREAD_IDS = [t.strip() for t in os.environ.get("IG_THREAD_IDS", "").split(",") if t.strip()]
 
+IGNORE_WELCOME_USERNAMES = ["qwetuihf1", BOT_USERNAME] 
+
 WELCOME_COOLDOWN_SEC = 12 * 3600  # 12 ghante
 MESSAGE_CHECK_INTERVAL = 5 
 ADMIN_POLL_INTERVAL = 15
@@ -19,7 +21,6 @@ ADMIN_POLL_INTERVAL = 15
 # === GLOBALS ===
 welcome_sent = {}
 processed_message_ids = set()
-# LINK REGEX FIX: Ab ig.me aur instagram.com dono pakdega
 gc_link_pattern = re.compile(
     r'(https?://)?(www\.)?(instagram\.com|instagr\.am|ig\.me)/(chat|direct|group|j)',
     re.IGNORECASE
@@ -77,15 +78,19 @@ def send_msg(thread_id, text):
 # === HANDLERS ===
 def handle_welcome(thread_id, user_id, username):
     now = time.time()
-    if user_id == cl.user_id:
-        return
-    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC:
+    
+    if user_id == cl.user_id: return
+    if username in IGNORE_WELCOME_USERNAMES: return
+    
+    if now - welcome_sent.get(username, 0) < WELCOME_COOLDOWN_SEC:
         return
         
     mention = f"@{username}" if username else f"@{user_id}"
     text = f"WELCOME TO OUR GC {mention} HOW ARE YOU 💖🥰"
+    
+    welcome_sent[username] = now 
+    
     if send_msg(thread_id, text):
-        welcome_sent[user_id] = time.time()
         print(f"[WELCOME] {username}")
 
 def handle_ignore(thread_id, user_id):
@@ -164,16 +169,15 @@ def poll_messages(start_time):
                 try:
                     sender_info = get_user_info(sender_id)
                     username = sender_info.username if sender_info else None
-                    is_admin = username in ADMIN_USERNAMES
                     
-                    # Yahan Priority set ki hai
                     if "hello bot" in raw_text.lower():
                         handle_hello_bot(thread_id, sender_id)
                     elif "ignore" in raw_text.lower():
                         handle_ignore(thread_id, sender_id)
                     elif gc_link_pattern.search(raw_text):
-                        handle_gc_link(thread_id, sender_id) # Link bheja toh sirf link ka reply, welcome nahi
-                    elif not is_admin:
+                        handle_gc_link(thread_id, sender_id)
+                    else:
+                        # Ab sabko welcome milega (Admin check hata diya)
                         handle_welcome(thread_id, sender_id, username)
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
