@@ -3,7 +3,7 @@ import re
 import time
 import random
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from instagrapi import Client
 from instagrapi.exceptions import LoginRequired, RateLimitError
 
@@ -13,8 +13,8 @@ ADMIN_USERNAMES = [a.strip() for a in os.environ.get("IG_ADMINS", "eren_ye4gerrr
 GROUP_THREAD_IDS = [t.strip() for t in os.environ.get("IG_THREAD_IDS", "").split(",") if t.strip()]
 
 WELCOME_COOLDOWN_SEC = 6 * 3600
-MESSAGE_CHECK_INTERVAL = 15 
-ADMIN_POLL_INTERVAL = 20
+MESSAGE_CHECK_INTERVAL = 10 
+ADMIN_POLL_INTERVAL = 15
 
 # === GLOBALS ===
 welcome_sent = {}
@@ -62,13 +62,14 @@ def get_user_info(user_id):
     except Exception: return None
 
 def human_delay():
-    delay = random.randint(5, 12)
-    print(f"[DELAY] Typing... waiting {delay}s")
-    time.sleep(delay)
+    time.sleep(random.randint(6, 12))
 
-def send_msg(thread_id, text):
+def send_msg(thread_id, text, reply_to=None):
     try:
-        cl.direct_send(text, thread_ids=[thread_id])
+        if reply_to is not None:
+            cl.direct_send(text, thread_ids=[thread_id], reply_to_message=reply_to)
+        else:
+            cl.direct_send(text, thread_ids=[thread_id])
         return True
     except RateLimitError:
         print("[RATE LIMIT] sleeping 60s")
@@ -90,28 +91,41 @@ def handle_welcome(thread_id, user_id, username):
         welcome_sent[user_id] = now
         print(f"[WELCOME] {username}")
 
-def handle_ignore(thread_id, user_id):
+def handle_ignore(thread_id, user_id, msg_obj):
     human_delay()
     u = get_user_info(user_id)
     username = u.username if u else "baccha"
-    text = f"@{username} AWW BACCHA ISSOKIEE MEIN HU NA APKE LIYE 🥹💋"
-    if send_msg(thread_id, text): print(f"[IGNORE] replied to {username}")
+    
+    # Random emoji variations taaki spam na lage
+    emojis = ["🥹💋", "🥹💖", "🫂💋", "🥺💕", "💖🥹"]
+    chosen_emoji = random.choice(emojis)
+    
+    text = f"@{username} AWW BACCHA ISSOKIEE MEIN HU NA APKE LIYE {chosen_emoji}"
+    if send_msg(thread_id, text, reply_to=msg_obj): 
+        print(f"[IGNORE] replied to {username}")
 
-def handle_gc_link(thread_id, user_id):
+def handle_gc_link(thread_id, user_id, msg_obj):
     human_delay()
     u = get_user_info(user_id)
     username = u.username if u else "user"
-    text = f"@{username} AWW TERE B44P KI BIWI KI PICS SHARE KAR RHA HAI KYA GC PE 😍💦👅"
-    if send_msg(thread_id, text): print(f"[GCLINK] replied to {username}")
+    
+    # Random emoji variations
+    emojis = ["😍💦👅", "😍😋💦", "🤤💦👅", "😍💦🔥", "🥵💦👅"]
+    chosen_emoji = random.choice(emojis)
+    
+    text = f"@{username} AWW TERE B44P KI BIWI KI PICS SHARE KAR RHA HAI KYA GC PE {chosen_emoji}"
+    if send_msg(thread_id, text, reply_to=msg_obj): 
+        print(f"[GCLINK] replied to {username}")
 
 # === MESSAGE POLLER ===
 def poll_messages():
     global processed_message_ids
     is_first_run = True
+
     while True:
         for thread_id in GROUP_THREAD_IDS:
             try:
-                thread = cl.direct_thread(thread_id, amount=10)
+                thread = cl.direct_thread(thread_id, amount=15)
             except LoginRequired:
                 try: login()
                 except Exception: pass
@@ -125,9 +139,11 @@ def poll_messages():
             for msg in messages:
                 if msg.id in processed_message_ids:
                     continue
+                
                 if is_first_run:
                     processed_message_ids.add(msg.id)
                     continue
+                
                 if msg.user_id == cl.user_id:
                     processed_message_ids.add(msg.id)
                     continue
@@ -137,45 +153,68 @@ def poll_messages():
                     raw_text = getattr(msg, "text", "") or ""
                     sender_id = msg.user_id
 
+                    # 1. IGNORE CHECK
                     if raw_text and "ignore" in raw_text.lower():
-                        handle_ignore(thread_id, sender_id)
+                        handle_ignore(thread_id, sender_id, msg)
+                        processed_message_ids.add(msg.id)
+                    
+                    # 2. GC LINK CHECK
                     elif raw_text and gc_link_pattern.search(raw_text):
-                        handle_gc_link(thread_id, sender_id)
+                        handle_gc_link(thread_id, sender_id, msg)
+                        processed_message_ids.add(msg.id)
+                    
+                    # 3. WELCOME CHECK (NEW MEMBER JOINED)
                     elif item_type == "action_log" and "joined" in raw_text.lower():
                         joined_uid = None
                         joined_uname = None
+                        
                         m = re.search(r"@([A-Za-z0-9._]+)", raw_text)
                         if m:
                             joined_uname = m.group(1)
                             try: joined_uid = cl.user_id_from_username(joined_uname)
                             except: pass
+                        
                         if not joined_uid:
                             mid_uid = getattr(msg, "user_id", None)
                             if mid_uid and mid_uid != cl.user_id:
                                 joined_uid = mid_uid
                                 u = get_user_info(mid_uid)
                                 joined_uname = u.username if u else None
+                        
                         if joined_uid:
                             handle_welcome(thread_id, joined_uid, joined_uname)
+                        
+                        processed_message_ids.add(msg.id)
+                        
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
-                processed_message_ids.add(msg.id)
+                    processed_message_ids.add(msg.id)
                 
         is_first_run = False
+        if len(processed_message_ids) > 10000:
+            processed_message_ids = set(list(processed_message_ids)[-5000:])
+            
         time.sleep(MESSAGE_CHECK_INTERVAL)
 
 # === ADMIN & DAILY ===
 def poll_admin_dm():
     global processed_message_ids
     while True:
-        try: threads = cl.direct_threads(amount=15)
-        except Exception: time.sleep(ADMIN_POLL_INTERVAL); continue
+        try: 
+            threads = cl.direct_threads(amount=1)
+        except Exception: 
+            time.sleep(ADMIN_POLL_INTERVAL)
+            continue
 
         for thread in threads:
             if not thread.messages: continue
             last = thread.messages[0]
-            if last.id in processed_message_ids: continue
+            
+            if last.id in processed_message_ids:
+                continue
+                
             processed_message_ids.add(last.id)
+            
             if last.user_id == cl.user_id: continue
 
             sender = get_user_info(last.user_id)
@@ -188,20 +227,31 @@ def poll_admin_dm():
                     for tid in GROUP_THREAD_IDS:
                         send_msg(tid, content)
                     send_msg(thread.id, "✅ Sent to GC")
+                    print("[ADMIN] Sent to GC")
+                    time.sleep(5)
         time.sleep(ADMIN_POLL_INTERVAL)
 
 def daily_scheduler():
     last_gm_date = None
     last_gn_date = None
     while True:
-        now = datetime.now()
+        now = datetime.utcnow() + timedelta(hours=5, minutes=30)
         today = now.date()
+        
         if now.hour == 7 and now.minute == 0 and last_gm_date != today:
-            for tid in GROUP_THREAD_IDS: send_msg(tid, "GOOD MORNING EVERYONE ☀️💖")
+            for tid in GROUP_THREAD_IDS: 
+                send_msg(tid, "GOOD MORNING EVERYONE ☀️💖")
             last_gm_date = today
+            print("[DAILY] Good morning sent")
+            time.sleep(65) 
+            
         if now.hour == 0 and now.minute == 0 and last_gn_date != today:
-            for tid in GROUP_THREAD_IDS: send_msg(tid, "GOOD NIGHT EVERYONE 🌙💤")
+            for tid in GROUP_THREAD_IDS: 
+                send_msg(tid, "GOOD NIGHT EVERYONE 🌙💤")
             last_gn_date = today
+            print("[DAILY] Good night sent")
+            time.sleep(65)
+            
         time.sleep(20)
 
 def start_keep_alive():
