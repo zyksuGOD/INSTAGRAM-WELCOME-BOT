@@ -109,6 +109,7 @@ def handle_gc_link(thread_id, message):
 
 # === MESSAGE POLLER ===
 def poll_messages():
+    global processed_message_ids  # Fixed UnboundLocalError
     while True:
         for thread_id in GROUP_THREAD_IDS:
             try:
@@ -144,13 +145,11 @@ def poll_messages():
                         joined_uid = None
                         joined_uname = None
 
-                        # 1) try @username from text
                         m = re.search(r"@([A-Za-z0-9._]+)", raw_text)
                         if m:
                             joined_uname = m.group(1)
                             joined_uid = get_user_id_by_username(joined_uname)
 
-                        # 2) fallback: use message's user_id if present and not bot
                         if not joined_uid:
                             mid_uid = getattr(msg, "user_id", None)
                             if mid_uid and mid_uid != cl.user_id:
@@ -183,6 +182,7 @@ def poll_messages():
 
 # === ADMIN DM POLLER ===
 def poll_admin_dm():
+    global processed_message_ids  # Fixed UnboundLocalError
     while True:
         try:
             threads = cl.direct_threads(amount=15)
