@@ -64,12 +64,6 @@ def get_user_info(user_id):
     except Exception:
         return None
 
-def get_user_id_by_username(username):
-    try:
-        return cl.user_id_from_username(username.strip())
-    except Exception:
-        return None
-
 def send_msg(thread_id, text, reply_to=None):
     try:
         if reply_to is not None:
@@ -109,11 +103,14 @@ def handle_gc_link(thread_id, message):
 
 # === MESSAGE POLLER ===
 def poll_messages():
-    global processed_message_ids  # Fixed UnboundLocalError
+    global processed_message_ids
+    # Pehli baar chalne pe purane messages ko mark kar dega taaki spam na ho
+    is_first_run = True
+    
     while True:
         for thread_id in GROUP_THREAD_IDS:
             try:
-                thread = cl.direct_thread(thread_id, amount=15)
+                thread = cl.direct_thread(thread_id, amount=10)
             except LoginRequired:
                 print("[LOGIN EXPIRED] re-login")
                 try:
@@ -127,9 +124,17 @@ def poll_messages():
 
             if not thread or not thread.messages:
                 continue
+            
+            # Array reversed taaki purane se naye ki taraf jaye
+            messages = list(reversed(thread.messages))
 
-            for msg in reversed(thread.messages):
+            for msg in messages:
                 if msg.id in processed_message_ids:
+                    continue
+
+                # Purane messages ko history me daal kar skip karo
+                if is_first_run:
+                    processed_message_ids.add(msg.id)
                     continue
 
                 if msg.user_id == cl.user_id:
@@ -140,16 +145,27 @@ def poll_messages():
                     item_type = getattr(msg, "item_type", "") or ""
                     raw_text = getattr(msg, "text", "") or ""
 
+                    # --- IGNORE KEYWORD ---
+                    if raw_text and "ignore" in raw_text.lower():
+                        handle_ignore(thread_id, msg)
+
+                    # --- GC LINK ---
+                    elif raw_text and gc_link_pattern.search(raw_text):
+                        handle_gc_link(thread_id, msg)
+
                     # --- NEW MEMBER JOIN ---
-                    if item_type == "action_log" and "joined" in raw_text.lower():
+                    elif item_type == "action_log" and "joined" in raw_text.lower():
                         joined_uid = None
                         joined_uname = None
-
+                        
                         m = re.search(r"@([A-Za-z0-9._]+)", raw_text)
                         if m:
                             joined_uname = m.group(1)
-                            joined_uid = get_user_id_by_username(joined_uname)
-
+                            try:
+                                joined_uid = cl.user_id_from_username(joined_uname)
+                            except:
+                                pass
+                        
                         if not joined_uid:
                             mid_uid = getattr(msg, "user_id", None)
                             if mid_uid and mid_uid != cl.user_id:
@@ -159,61 +175,44 @@ def poll_messages():
 
                         if joined_uid:
                             handle_welcome(thread_id, joined_uid, joined_uname)
-                        else:
-                            print(f"[WELCOME SKIP] could not resolve user. raw='{raw_text}'")
-
-                    # --- IGNORE KEYWORD ---
-                    if raw_text and "ignore" in raw_text.lower():
-                        handle_ignore(thread_id, msg)
-
-                    # --- GC LINK ---
-                    if raw_text and gc_link_pattern.search(raw_text):
-                        handle_gc_link(thread_id, msg)
 
                 except Exception as e:
                     print(f"[HANDLER ERROR] {e}")
 
                 processed_message_ids.add(msg.id)
+                
+        is_first_run = False # Pehla scan khatam
 
-        if len(processed_message_ids) > 20000:
-            processed_message_ids = set(list(processed_message_ids)[-10000:])
+        if len(processed_message_ids) > 5000:
+            processed_message_ids = set(list(processed_message_ids)[-2000:])
 
         time.sleep(MESSAGE_CHECK_INTERVAL)
 
 # === ADMIN DM POLLER ===
 def poll_admin_dm():
-    global processed_message_ids  # Fixed UnboundLocalError
+    global processed_message_ids
     while True:
         try:
             threads = cl.direct_threads(amount=15)
-        except LoginRequired:
-            try:
-                login()
-            except Exception as e:
-                print(f"[RELOGIN FAIL] {e}")
-            time.sleep(ADMIN_POLL_INTERVAL)
-            continue
-        except Exception as e:
-            print(f"[ADMIN THREADS ERROR] {e}")
+        except Exception:
             time.sleep(ADMIN_POLL_INTERVAL)
             continue
 
         for thread in threads:
             if not thread.messages:
                 continue
+                
             last = thread.messages[0]
-            if last.user_id == cl.user_id:
-                continue
             if last.id in processed_message_ids:
+                continue
+                
+            processed_message_ids.add(last.id)
+
+            if last.user_id == cl.user_id:
                 continue
 
             sender = get_user_info(last.user_id)
-            if not sender:
-                processed_message_ids.add(last.id)
-                continue
-
-            if sender.username not in ADMIN_USERNAMES:
-                processed_message_ids.add(last.id)
+            if not sender or sender.username not in ADMIN_USERNAMES:
                 continue
 
             raw_text = (last.text or "").strip()
@@ -223,7 +222,6 @@ def poll_admin_dm():
                     for tid in GROUP_THREAD_IDS:
                         send_msg(tid, content)
                     send_msg(thread.id, "✅ Sent to GC")
-            processed_message_ids.add(last.id)
 
         time.sleep(ADMIN_POLL_INTERVAL)
 
@@ -239,13 +237,11 @@ def daily_scheduler():
             for tid in GROUP_THREAD_IDS:
                 send_msg(tid, "GOOD MORNING EVERYONE ☀️💖")
             last_gm_date = today
-            print("[DAILY] Good morning sent")
 
         if now.hour == 0 and now.minute == 0 and last_gn_date != today:
             for tid in GROUP_THREAD_IDS:
                 send_msg(tid, "GOOD NIGHT EVERYONE 🌙💤")
             last_gn_date = today
-            print("[DAILY] Good night sent")
 
         time.sleep(20)
 
@@ -254,9 +250,8 @@ def start_keep_alive():
     try:
         from keep_alive import run_server
         threading.Thread(target=run_server, daemon=True).start()
-        print("[KEEPALIVE] HTTP server started")
-    except Exception as e:
-        print(f"[KEEPALIVE ERROR] {e}")
+    except Exception:
+        pass
 
 # === MAIN ===
 if __name__ == "__main__":
