@@ -19,8 +19,9 @@ ADMIN_POLL_INTERVAL = 15
 # === GLOBALS ===
 welcome_sent = {}
 processed_message_ids = set()
+# LINK REGEX FIX: Ab ig.me aur instagram.com dono pakdega
 gc_link_pattern = re.compile(
-    r'(https?://)?(www\.)?(instagram\.com|instagr\.am)/(chat|direct|group|j)',
+    r'(https?://)?(www\.)?(instagram\.com|instagr\.am|ig\.me)/(chat|direct|group|j)',
     re.IGNORECASE
 )
 cl = Client()
@@ -76,9 +77,9 @@ def send_msg(thread_id, text):
 # === HANDLERS ===
 def handle_welcome(thread_id, user_id, username):
     now = time.time()
-    if user_id == cl.user_id: # Khud ko welcome nahi
+    if user_id == cl.user_id:
         return
-    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC: # 12 ghante gap
+    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC:
         return
         
     mention = f"@{username}" if username else f"@{user_id}"
@@ -144,15 +145,14 @@ def poll_messages(start_time):
                 
                 processed_message_ids.add(msg.id)
 
-                # Purana message skip karo (bot start hone se pehle ka)
                 if msg.timestamp and msg.timestamp.timestamp() < start_time:
                     continue
 
-                if msg.user_id == cl.user_id: # Khud ka message skip
+                if msg.user_id == cl.user_id:
                     continue
                 
                 item_type = getattr(msg, "item_type", "") or ""
-                if item_type == "action_log": # Join/leave skip
+                if item_type == "action_log":
                     continue
 
                 raw_text = getattr(msg, "text", "") or ""
@@ -166,12 +166,13 @@ def poll_messages(start_time):
                     username = sender_info.username if sender_info else None
                     is_admin = username in ADMIN_USERNAMES
                     
+                    # Yahan Priority set ki hai
                     if "hello bot" in raw_text.lower():
                         handle_hello_bot(thread_id, sender_id)
                     elif "ignore" in raw_text.lower():
                         handle_ignore(thread_id, sender_id)
                     elif gc_link_pattern.search(raw_text):
-                        handle_gc_link(thread_id, sender_id)
+                        handle_gc_link(thread_id, sender_id) # Link bheja toh sirf link ka reply, welcome nahi
                     elif not is_admin:
                         handle_welcome(thread_id, sender_id, username)
                 except Exception as e:
@@ -262,10 +263,8 @@ if __name__ == "__main__":
     login()
     start_keep_alive()
     
-    # Start time save karo taaki purane messages ignore ho sakein
     BOT_START_TIME = time.time()
     
-    # 1 hi baar Active message bhejne ke liye check
     for tid in GROUP_THREAD_IDS:
         send_msg(tid, "BOT IS ACTIVE NOW")
     
