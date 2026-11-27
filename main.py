@@ -18,7 +18,7 @@ ADMIN_POLL_INTERVAL = 15
 
 # === GLOBALS ===
 welcome_sent = {}
-last_processed_msg_id = {} # Per thread last message ID
+processed_message_ids = set()
 gc_link_pattern = re.compile(
     r'(https?://)?(www\.)?(instagram\.com|instagr\.am)/(chat|direct|group|j)',
     re.IGNORECASE
@@ -61,6 +61,7 @@ def get_user_info(user_id):
     except Exception: return None
 
 def send_msg(thread_id, text):
+    # Safe delay: 8 se 12 second (ban nahi lagega)
     time.sleep(random.randint(8, 12)) 
     try:
         cl.direct_send(text, thread_ids=[thread_id])
@@ -76,8 +77,11 @@ def send_msg(thread_id, text):
 # === HANDLERS ===
 def handle_welcome(thread_id, user_id, username):
     now = time.time()
-    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC:
+    if user_id == cl.user_id: # Khud ko welcome nahi
         return
+    if now - welcome_sent.get(user_id, 0) < WELCOME_COOLDOWN_SEC: # 12 ghante ka gap
+        return
+        
     mention = f"@{username}" if username else f"@{user_id}"
     text = f"WELCOME TO OUR GC {mention} HOW ARE YOU 💖🥰"
     if send_msg(thread_id, text):
@@ -111,22 +115,13 @@ def handle_1111(thread_id):
 
 # === MESSAGE POLLER ===
 def poll_messages():
-    global last_processed_msg_id
-    
-    # Pehli baar chalne pe current latest message ko save kar lega taaki spam na ho
-    print("[BOT] Initializing message tracker...")
-    for thread_id in GROUP_THREAD_IDS:
-        try:
-            thread = cl.direct_thread(thread_id, amount=1)
-            if thread and thread.messages:
-                last_processed_msg_id[thread_id] = thread.messages[0].id
-        except Exception:
-            pass
+    global processed_message_ids
+    print("[BOT] Message tracker started...")
 
     while True:
         for thread_id in GROUP_THREAD_IDS:
             try:
-                thread = cl.direct_thread(thread_id, amount=1) # Sirf latest message
+                thread = cl.direct_thread(thread_id, amount=10)
             except LoginRequired:
                 try: login()
                 except Exception: pass
@@ -135,54 +130,51 @@ def poll_messages():
                 continue
 
             if not thread or not thread.messages: continue
-            
-            msg = thread.messages[0]
-            
-            # Agar purana message hai toh skip karo
-            if last_processed_msg_id.get(thread_id) == msg.id:
-                continue
-                
-            # Naya message mila, ab isko processed mark karo
-            last_processed_msg_id[thread_id] = msg.id
-            
-            # Khud ka message hai toh skip karo
-            if msg.user_id == cl.user_id:
-                continue
+            messages = list(reversed(thread.messages))
 
-            try:
+            for msg in messages:
+                if msg.id in processed_message_ids:
+                    continue
+                
+                processed_message_ids.add(msg.id)
+
+                if msg.user_id == cl.user_id: # Khud ka message skip
+                    continue
+                
+                item_type = getattr(msg, "item_type", "") or ""
+                if item_type == "action_log": # Join/leave skip
+                    continue
+
                 raw_text = getattr(msg, "text", "") or ""
                 sender_id = msg.user_id
                 
-                # Sirf text messages pe kaam karega
                 if not raw_text:
                     continue
                 
-                sender_info = get_user_info(sender_id)
-                username = sender_info.username if sender_info else None
-                is_admin = username in ADMIN_USERNAMES
-                
-                # Admin ka message hai toh kuch mat karo
-                if is_admin:
-                    continue
-                
-                if "ignore" in raw_text.lower():
-                    handle_ignore(thread_id, sender_id)
-                elif gc_link_pattern.search(raw_text):
-                    handle_gc_link(thread_id, sender_id)
-                else:
-                    handle_welcome(thread_id, sender_id, username)
+                try:
+                    sender_info = get_user_info(sender_id)
+                    username = sender_info.username if sender_info else None
                     
-            except Exception as e:
-                print(f"[HANDLER ERROR] {e}")
+                    if "ignore" in raw_text.lower():
+                        handle_ignore(thread_id, sender_id)
+                    elif gc_link_pattern.search(raw_text):
+                        handle_gc_link(thread_id, sender_id)
+                    else:
+                        handle_welcome(thread_id, sender_id, username)
+                except Exception as e:
+                    print(f"[HANDLER ERROR] {e}")
                 
+        if len(processed_message_ids) > 5000:
+            processed_message_ids = set(list(processed_message_ids)[-2000:])
+            
         time.sleep(MESSAGE_CHECK_INTERVAL)
 
 # === ADMIN & DAILY ===
 def poll_admin_dm():
-    global last_processed_msg_id
+    global processed_message_ids
     while True:
         try: 
-            threads = cl.direct_threads(amount=1)
+            threads = cl.direct_threads(amount=5)
         except Exception: 
             time.sleep(ADMIN_POLL_INTERVAL)
             continue
@@ -191,11 +183,9 @@ def poll_admin_dm():
             if not thread.messages: continue
             last = thread.messages[0]
             
-            # Admin DM ke liye alag tracker
-            dm_key = f"dm_{thread.id}"
-            if last_processed_msg_id.get(dm_key) == last.id:
+            if last.id in processed_message_ids:
                 continue
-            last_processed_msg_id[dm_key] = last.id
+            processed_message_ids.add(last.id)
             
             if last.user_id == cl.user_id: continue
 
