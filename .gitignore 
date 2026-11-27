@@ -1,6 +1,0 @@
-__pycache__/
-*.pyc
-.env
-session.json
-state.json
-cookies.txt
