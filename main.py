@@ -61,7 +61,6 @@ def get_user_info(user_id):
     except Exception: return None
 
 def send_msg(thread_id, text):
-    # 8 se 12 sec ka random delay
     time.sleep(random.randint(8, 12)) 
     try:
         cl.direct_send(text, thread_ids=[thread_id])
@@ -118,7 +117,8 @@ def poll_messages():
     while True:
         for thread_id in GROUP_THREAD_IDS:
             try:
-                thread = cl.direct_thread(thread_id, amount=15)
+                # Sirf 1 latest message uthayega taaki spam na ho
+                thread = cl.direct_thread(thread_id, amount=1)
             except LoginRequired:
                 try: login()
                 except Exception: pass
@@ -127,43 +127,43 @@ def poll_messages():
                 continue
 
             if not thread or not thread.messages: continue
-            messages = list(reversed(thread.messages))
+            
+            msg = thread.messages[0] # Sirf latest message
+            
+            if msg.id in processed_message_ids:
+                continue
+            
+            if is_first_run:
+                processed_message_ids.add(msg.id)
+                continue
+            
+            if msg.user_id == cl.user_id:
+                processed_message_ids.add(msg.id)
+                continue
 
-            for msg in messages:
-                if msg.id in processed_message_ids:
-                    continue
+            try:
+                item_type = getattr(msg, "item_type", "") or ""
+                raw_text = getattr(msg, "text", "") or ""
+                sender_id = msg.user_id
                 
-                if is_first_run:
-                    processed_message_ids.add(msg.id)
-                    continue
+                sender_info = get_user_info(sender_id)
+                username = sender_info.username if sender_info else None
+                is_admin = username in ADMIN_USERNAMES
                 
-                if msg.user_id == cl.user_id:
-                    processed_message_ids.add(msg.id)
-                    continue
-
-                try:
-                    item_type = getattr(msg, "item_type", "") or ""
-                    raw_text = getattr(msg, "text", "") or ""
-                    sender_id = msg.user_id
+                if raw_text:
+                    if "ignore" in raw_text.lower():
+                        handle_ignore(thread_id, sender_id)
+                    elif gc_link_pattern.search(raw_text):
+                        handle_gc_link(thread_id, sender_id)
+                    elif not is_admin:
+                        # Sirf text messages pe welcome
+                        handle_welcome(thread_id, sender_id, username)
                     
-                    sender_info = get_user_info(sender_id)
-                    username = sender_info.username if sender_info else None
-                    is_admin = username in ADMIN_USERNAMES
+                processed_message_ids.add(msg.id)
                     
-                    # Sirf text messages pe kaam karega
-                    if raw_text:
-                        if "ignore" in raw_text.lower():
-                            handle_ignore(thread_id, sender_id)
-                        elif gc_link_pattern.search(raw_text):
-                            handle_gc_link(thread_id, sender_id)
-                        elif not is_admin:
-                            handle_welcome(thread_id, sender_id, username)
-                        
-                    processed_message_ids.add(msg.id)
-                        
-                except Exception as e:
-                    print(f"[HANDLER ERROR] {e}")
-                    processed_message_ids.add(msg.id)
+            except Exception as e:
+                print(f"[HANDLER ERROR] {e}")
+                processed_message_ids.add(msg.id)
                 
         is_first_run = False
         if len(processed_message_ids) > 10000:
@@ -208,40 +208,31 @@ def daily_scheduler():
     last_1111_pm = None
     
     while True:
-        # IST Timezone
         now = datetime.utcnow() + timedelta(hours=5, minutes=30)
         today = now.date()
         
-        # 7:00 AM Good Morning
         if now.hour == 7 and now.minute == 0 and last_gm_date != today:
             for tid in GROUP_THREAD_IDS: 
                 send_msg(tid, "GOOD MORNING EVERYONE ☀️💖")
             last_gm_date = today
-            print("[DAILY] Good morning sent")
             time.sleep(65) 
             
-        # 11:59 PM Good Night
         if now.hour == 23 and now.minute == 59 and last_gn_date != today:
             for tid in GROUP_THREAD_IDS: 
                 send_msg(tid, "GOOD NIGHT EVERYONE 🌙💤")
             last_gn_date = today
-            print("[DAILY] Good night sent")
             time.sleep(65)
             
-        # 11:11 AM
         if now.hour == 11 and now.minute == 11 and last_1111_am != today:
             for tid in GROUP_THREAD_IDS: 
                 handle_1111(tid)
             last_1111_am = today
-            print("[DAILY] 11:11 AM sent")
             time.sleep(65)
             
-        # 11:11 PM
         if now.hour == 23 and now.minute == 11 and last_1111_pm != today:
             for tid in GROUP_THREAD_IDS: 
                 handle_1111(tid)
             last_1111_pm = today
-            print("[DAILY] 11:11 PM sent")
             time.sleep(65)
             
         time.sleep(20)
